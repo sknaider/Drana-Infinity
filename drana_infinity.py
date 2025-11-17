@@ -13,7 +13,10 @@ sys.modules['warnings'] = warnings
 import subprocess, json, re, os, sqlite3, hashlib, uuid, secrets, requests
 from waitress import serve
 from flask import Flask, request, jsonify, render_template, Response, stream_with_context, make_response, send_from_directory
-from werkzeug.utils import secure_filename 
+from werkzeug.utils import secure_filename
+from threading import Lock
+from contextlib import contextmanager
+import multiprocessing 
 
 try:
     from updater import update_drana_infinity
@@ -24,117 +27,161 @@ except Exception as e:
 
 drana_infinity = Flask(__name__)
 DB_NAME = 'chat_database.db'
-UPLOAD_FOLDER = 'uploads' 
+UPLOAD_FOLDER = 'uploads'
 drana_infinity.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# Database connection pool configuration for high-performance systems
+_db_lock = Lock()
+_db_pool = []
+MAX_DB_CONNECTIONS = 32  # Optimized for Ryzen 9 9950 (32 threads)
+
+@contextmanager
+def get_db_connection():
+    """Thread-safe database connection pooling"""
+    conn = None
+    with _db_lock:
+        if _db_pool:
+            conn = _db_pool.pop()
+        else:
+            conn = sqlite3.connect(DB_NAME, check_same_thread=False, timeout=30.0)
+            # Optimize SQLite for high-RAM systems (128GB)
+            conn.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging for better concurrency
+            conn.execute("PRAGMA synchronous=NORMAL")  # Faster writes
+            conn.execute("PRAGMA cache_size=-262144")  # 256MB cache (negative = KB)
+            conn.execute("PRAGMA temp_store=MEMORY")  # Store temp tables in RAM
+            conn.execute("PRAGMA mmap_size=2147483648")  # 2GB memory-mapped I/O
+            conn.execute("PRAGMA page_size=4096")  # Optimal page size
+            conn.execute("PRAGMA busy_timeout=30000")  # 30 second timeout
+    try:
+        yield conn
+    finally:
+        with _db_lock:
+            if len(_db_pool) < MAX_DB_CONNECTIONS:
+                _db_pool.append(conn)
+            else:
+                conn.close()
 
 def init_db():
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("PRAGMA foreign_keys = ON;")
-    
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_hash TEXT PRIMARY KEY,
-            username TEXT NOT NULL
-        )
-    ''')
-    
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS projects (
-            project_id TEXT PRIMARY KEY,
-            user_hash TEXT NOT NULL,
-            title TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_hash) REFERENCES users(user_hash) ON DELETE CASCADE
-        )
-    ''')
-    
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS chats (
-            chat_id TEXT PRIMARY KEY,
-            user_hash TEXT NOT NULL,
-            title TEXT NOT NULL,
-            model_name TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            project_id TEXT,
-            FOREIGN KEY(user_hash) REFERENCES users(user_hash) ON DELETE CASCADE,
-            FOREIGN KEY(project_id) REFERENCES projects(project_id) ON DELETE CASCADE
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS messages (
-            message_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chat_id TEXT NOT NULL,
-            sender TEXT NOT NULL,
-            text TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            file_path TEXT,
-            file_name TEXT,
-            FOREIGN KEY(chat_id) REFERENCES chats(chat_id) ON DELETE CASCADE
-        )
-    ''')
-    
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS command_outputs (
-            output_id TEXT PRIMARY KEY,
-            chat_id TEXT NOT NULL,
-            command TEXT NOT NULL,
-            output TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(chat_id) REFERENCES chats(chat_id) ON DELETE CASCADE
-        )
-    ''')
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("PRAGMA foreign_keys = ON;")
 
-    try:
-        c.execute("ALTER TABLE chats ADD COLUMN model_name TEXT NOT NULL DEFAULT 'llama3'")
-    except sqlite3.OperationalError:
-        pass
-        
-    try:
-        c.execute("ALTER TABLE messages ADD COLUMN file_path TEXT")
-        c.execute("ALTER TABLE messages ADD COLUMN file_name TEXT")
-    except sqlite3.OperationalError:
-        pass 
-        
-    try:
-        c.execute("ALTER TABLE chats ADD COLUMN project_id TEXT REFERENCES projects(project_id) ON DELETE CASCADE")
-    except sqlite3.OperationalError:
-        pass 
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_hash TEXT PRIMARY KEY,
+                username TEXT NOT NULL
+            )
+        ''')
 
-    conn.commit()
-    conn.close()
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS projects (
+                project_id TEXT PRIMARY KEY,
+                user_hash TEXT NOT NULL,
+                title TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_hash) REFERENCES users(user_hash) ON DELETE CASCADE
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS chats (
+                chat_id TEXT PRIMARY KEY,
+                user_hash TEXT NOT NULL,
+                title TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                project_id TEXT,
+                FOREIGN KEY(user_hash) REFERENCES users(user_hash) ON DELETE CASCADE,
+                FOREIGN KEY(project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS messages (
+                message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT NOT NULL,
+                sender TEXT NOT NULL,
+                text TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                file_path TEXT,
+                file_name TEXT,
+                FOREIGN KEY(chat_id) REFERENCES chats(chat_id) ON DELETE CASCADE
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS command_outputs (
+                output_id TEXT PRIMARY KEY,
+                chat_id TEXT NOT NULL,
+                command TEXT NOT NULL,
+                output TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(chat_id) REFERENCES chats(chat_id) ON DELETE CASCADE
+            )
+        ''')
+
+        try:
+            c.execute("ALTER TABLE chats ADD COLUMN model_name TEXT NOT NULL DEFAULT 'llama3'")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            c.execute("ALTER TABLE messages ADD COLUMN file_path TEXT")
+            c.execute("ALTER TABLE messages ADD COLUMN file_name TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            c.execute("ALTER TABLE chats ADD COLUMN project_id TEXT REFERENCES projects(project_id) ON DELETE CASCADE")
+        except sqlite3.OperationalError:
+            pass
+
+        # Performance indexes for faster queries
+        try:
+            c.execute("CREATE INDEX IF NOT EXISTS idx_projects_user_hash ON projects(user_hash)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_chats_user_hash ON chats(user_hash)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_chats_project_id ON chats(project_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(chat_id, timestamp)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_command_outputs_chat_id ON command_outputs(chat_id)")
+        except sqlite3.OperationalError:
+            pass
+
+        conn.commit()
 
 
 def get_chat_history_for_ollama(chat_id):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("SELECT sender, text, file_name FROM messages WHERE chat_id = ? ORDER BY timestamp ASC", (chat_id,))
-    history = []
-    for row in c.fetchall():
-        sender, text, file_name = row
-        role = 'user' if sender == 'user' else 'assistant'
-        content = text
-        if file_name:
-            content = f"(The user has attached a file: {file_name})\n\n{text}"
-        history.append({'role': role, 'content': content})
-    conn.close()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT sender, text, file_name FROM messages WHERE chat_id = ? ORDER BY timestamp ASC", (chat_id,))
+        history = []
+        for row in c.fetchall():
+            sender, text, file_name = row
+            role = 'user' if sender == 'user' else 'assistant'
+            content = text
+            if file_name:
+                content = f"(The user has attached a file: {file_name})\n\n{text}"
+            history.append({'role': role, 'content': content})
     return history
 
 def stream_ollama_response(model_name, history, new_message, chat_id):
     ollama_url = "http://localhost:11434/api/chat"
-    
-    messages = history 
-    
+
+    messages = history
+
     payload = {
         "model": model_name,
         "messages": messages,
-        "stream": True
+        "stream": True,
+        "options": {
+            "num_gpu": 1,  # Enable GPU acceleration for RTX 5090
+            "num_thread": 16,  # Use half of available threads for Ollama (leave room for Flask)
+        }
     }
-    
+
     ai_full_response = ""
     try:
-        with requests.post(ollama_url, json=payload, stream=True) as r:
+        with requests.post(ollama_url, json=payload, stream=True, timeout=300) as r:
             r.raise_for_status()
             for line in r.iter_lines():
                 if line:
@@ -148,11 +195,10 @@ def stream_ollama_response(model_name, history, new_message, chat_id):
         yield f"[Error: {e}]"
     finally:
         if ai_full_response:
-            conn = sqlite3.connect(DB_NAME)
-            c = conn.cursor()
-            c.execute("INSERT INTO messages (chat_id, sender, text) VALUES (?, ?, ?)", (chat_id, 'ai', ai_full_response))
-            conn.commit()
-            conn.close()
+            with get_db_connection() as conn:
+                c = conn.cursor()
+                c.execute("INSERT INTO messages (chat_id, sender, text) VALUES (?, ?, ?)", (chat_id, 'ai', ai_full_response))
+                conn.commit()
 
 @drana_infinity.route('/upload_file', methods=['POST'])
 def upload_file():
@@ -225,12 +271,11 @@ def execute_stream():
             full_output = f"[Error: {str(e)}]"
             yield full_output
         finally:
-            conn = sqlite3.connect(DB_NAME)
-            c = conn.cursor()
-            c.execute("INSERT OR REPLACE INTO command_outputs (output_id, chat_id, command, output) VALUES (?, ?, ?, ?)",
-                      (output_id, chat_id, command, full_output))
-            conn.commit()
-            conn.close()
+            with get_db_connection() as conn:
+                c = conn.cursor()
+                c.execute("INSERT OR REPLACE INTO command_outputs (output_id, chat_id, command, output) VALUES (?, ?, ?, ?)",
+                          (output_id, chat_id, command, full_output))
+                conn.commit()
 
     return Response(stream_with_context(generate_and_save()), mimetype="text/plain")
 
@@ -240,11 +285,10 @@ def get_command_output():
     if not output_id:
         return jsonify({"success": False, "message": "Output ID not provided."}), 400
 
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("SELECT command, output FROM command_outputs WHERE output_id = ?", (output_id,))
-    result = c.fetchone()
-    conn.close()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT command, output FROM command_outputs WHERE output_id = ?", (output_id,))
+        result = c.fetchone()
 
     if result:
         return jsonify({"success": True, "command": result[0], "output": result[1]})
@@ -262,19 +306,18 @@ def projects_page():
 @drana_infinity.route('/project/<project_id>')
 def project_detail_page(project_id):
     user_hash = request.cookies.get('user_hash')
-    project_title = "Project" 
-    
+    project_title = "Project"
+
     if user_hash:
         try:
-            conn = sqlite3.connect(DB_NAME)
-            c = conn.cursor()
-            c.execute("SELECT title FROM projects WHERE project_id = ? AND user_hash = ?", (project_id, user_hash))
-            project = c.fetchone()
-            conn.close()
-            if project:
-                project_title = project[0]
-            else:
-                project_title = "Unknown Project"
+            with get_db_connection() as conn:
+                c = conn.cursor()
+                c.execute("SELECT title FROM projects WHERE project_id = ? AND user_hash = ?", (project_id, user_hash))
+                project = c.fetchone()
+                if project:
+                    project_title = project[0]
+                else:
+                    project_title = "Unknown Project"
         except Exception as e:
             print(f"Error fetching project title: {e}")
             project_title = "Error"
@@ -286,22 +329,21 @@ def login():
     username = request.json.get("username")
     if not username:
         return jsonify({"success": False, "message": "Username not provided."}), 400
-    
+
     user_hash = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
 
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("SELECT user_hash FROM users WHERE username = ?", (username,))
-    existing_user = c.fetchone()
-    if existing_user:
-        user_hash = existing_user[0]
-    else:
-        c.execute("INSERT INTO users (user_hash, username) VALUES (?, ?)", (user_hash, username))
-        conn.commit()
-    conn.close()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT user_hash FROM users WHERE username = ?", (username,))
+        existing_user = c.fetchone()
+        if existing_user:
+            user_hash = existing_user[0]
+        else:
+            c.execute("INSERT INTO users (user_hash, username) VALUES (?, ?)", (user_hash, username))
+            conn.commit()
 
     response = make_response(jsonify({"success": True, "user_hash": user_hash, "username": username}))
-    response.set_cookie('user_hash', user_hash, max_age=60*60*24*365) 
+    response.set_cookie('user_hash', user_hash, max_age=60*60*24*365)
     return response
 
 @drana_infinity.route('/get_user_info', methods=['GET'])
@@ -310,11 +352,10 @@ def get_user_info():
     if not user_hash:
         return jsonify({"success": False, "message": "User hash not found."}), 401
 
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("SELECT username FROM users WHERE user_hash = ?", (user_hash,))
-    user_info = c.fetchone()
-    conn.close()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT username FROM users WHERE user_hash = ?", (user_hash,))
+        user_info = c.fetchone()
 
     if user_info:
         return jsonify({"success": True, "username": user_info[0]})
@@ -327,28 +368,28 @@ def get_chats():
     user_hash = request.cookies.get('user_hash')
     if not user_hash:
         return jsonify({"success": False, "message": "User hash not found."}), 401
-    
+
     project_id = request.args.get('project_id')
 
     if not project_id or project_id == 'null' or project_id == 'None':
         project_id = None
 
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    
-    if project_id: 
-        c.execute(
-            "SELECT chat_id, title, model_name FROM chats WHERE user_hash = ? AND project_id = ? ORDER BY timestamp DESC", 
-            (user_hash, project_id)
-        )
-    else:
-         c.execute(
-            "SELECT chat_id, title, model_name FROM chats WHERE user_hash = ? AND (project_id IS NULL OR project_id = 'None') ORDER BY timestamp DESC", 
-            (user_hash,)
-        )
-        
-    chat_list = [{"chat_id": row[0], "title": row[1], "model_name": row[2]} for row in c.fetchall()]
-    conn.close()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+
+        if project_id:
+            c.execute(
+                "SELECT chat_id, title, model_name FROM chats WHERE user_hash = ? AND project_id = ? ORDER BY timestamp DESC",
+                (user_hash, project_id)
+            )
+        else:
+             c.execute(
+                "SELECT chat_id, title, model_name FROM chats WHERE user_hash = ? AND (project_id IS NULL OR project_id = 'None') ORDER BY timestamp DESC",
+                (user_hash,)
+            )
+
+        chat_list = [{"chat_id": row[0], "title": row[1], "model_name": row[2]} for row in c.fetchall()]
+
     return jsonify({"success": True, "chats": chat_list})
 
 @drana_infinity.route('/get_chat_messages', methods=['POST'])
@@ -357,11 +398,11 @@ def get_chat_messages():
     if not chat_id:
         return jsonify({"success": False, "message": "Chat ID not provided."}), 400
 
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("SELECT sender, text, file_path, file_name FROM messages WHERE chat_id = ? ORDER BY timestamp ASC", (chat_id,))
-    messages = [{"sender": row[0], "text": row[1], "file_path": row[2], "file_name": row[3]} for row in c.fetchall()]
-    conn.close()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT sender, text, file_path, file_name FROM messages WHERE chat_id = ? ORDER BY timestamp ASC", (chat_id,))
+        messages = [{"sender": row[0], "text": row[1], "file_path": row[2], "file_name": row[3]} for row in c.fetchall()]
+
     return jsonify({"success": True, "messages": messages})
 
 @drana_infinity.route('/rename_chat', methods=['POST'])
@@ -372,34 +413,34 @@ def rename_chat():
 
     if not all([chat_id, new_title, user_hash]):
         return jsonify({"success": False, "message": "Missing required data."}), 400
-    
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("UPDATE chats SET title = ? WHERE chat_id = ? AND user_hash = ?", (new_title, chat_id, user_hash))
-    conn.commit()
-    conn.close()
+
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("UPDATE chats SET title = ? WHERE chat_id = ? AND user_hash = ?", (new_title, chat_id, user_hash))
+        conn.commit()
+
     return jsonify({"success": True})
 
 @drana_infinity.route('/delete_chat', methods=['POST'])
 def delete_chat():
     chat_id = request.json.get("chat_id")
     user_hash = request.cookies.get('user_hash')
-    
+
     if not all([chat_id, user_hash]):
         return jsonify({"success": False, "message": "Missing required data."}), 400
 
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("DELETE FROM chats WHERE chat_id = ? AND user_hash = ?", (chat_id, user_hash))
-    conn.commit()
-    conn.close()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM chats WHERE chat_id = ? AND user_hash = ?", (chat_id, user_hash))
+        conn.commit()
+
     return jsonify({"success": True})
     
 @drana_infinity.route('/create_new_chat', methods=['POST'])
 def create_new_chat():
     user_hash = request.cookies.get('user_hash')
     model_name = request.json.get("model_name")
-    project_id = request.json.get("project_id") 
+    project_id = request.json.get("project_id")
 
     if not user_hash or not model_name:
         return jsonify({"success": False, "message": "Missing user hash or model name."}), 400
@@ -409,15 +450,14 @@ def create_new_chat():
 
     chat_id = str(uuid.uuid4())
     default_title = "New Chat"
-    
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute(
-        "INSERT INTO chats (chat_id, user_hash, title, model_name, project_id) VALUES (?, ?, ?, ?, ?)", 
-        (chat_id, user_hash, default_title, model_name, project_id)
-    )
-    conn.commit()
-    conn.close()
+
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO chats (chat_id, user_hash, title, model_name, project_id) VALUES (?, ?, ?, ?, ?)",
+            (chat_id, user_hash, default_title, model_name, project_id)
+        )
+        conn.commit()
 
     return jsonify({"success": True, "chat_id": chat_id, "title": default_title, "model_name": model_name})
 
@@ -433,23 +473,22 @@ def chat_stream():
     if not all([user_message, chat_id, model_name, user_hash]):
         return jsonify({"response": "Missing chat data."}), 400
 
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
+    with get_db_connection() as conn:
+        c = conn.cursor()
 
-    c.execute("SELECT * FROM messages WHERE chat_id = ?", (chat_id,))
-    is_first_message = not c.fetchone()
-    if is_first_message:
-        chat_title = user_message[:25] + "..." if len(user_message) > 25 else user_message
-        c.execute("UPDATE chats SET title = ? WHERE chat_id = ?", (chat_title, chat_id))
+        c.execute("SELECT * FROM messages WHERE chat_id = ?", (chat_id,))
+        is_first_message = not c.fetchone()
+        if is_first_message:
+            chat_title = user_message[:25] + "..." if len(user_message) > 25 else user_message
+            c.execute("UPDATE chats SET title = ? WHERE chat_id = ?", (chat_title, chat_id))
+            conn.commit()
+
+        c.execute("INSERT INTO messages (chat_id, sender, text, file_path, file_name) VALUES (?, ?, ?, ?, ?)",
+                  (chat_id, 'user', user_message, file_path, file_name))
         conn.commit()
 
-    c.execute("INSERT INTO messages (chat_id, sender, text, file_path, file_name) VALUES (?, ?, ?, ?, ?)", 
-              (chat_id, 'user', user_message, file_path, file_name))
-    conn.commit()
-    conn.close()
-
     history = get_chat_history_for_ollama(chat_id)
-    
+
     return Response(stream_with_context(stream_ollama_response(model_name, history, user_message, chat_id)),
                     mimetype="text/plain")
 
@@ -474,12 +513,12 @@ def get_projects():
     user_hash = request.cookies.get('user_hash')
     if not user_hash:
         return jsonify({"success": False, "message": "User hash not found."}), 401
-    
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("SELECT project_id, title FROM projects WHERE user_hash = ? ORDER BY timestamp DESC", (user_hash,))
-    project_list = [{"project_id": row[0], "title": row[1]} for row in c.fetchall()]
-    conn.close()
+
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT project_id, title FROM projects WHERE user_hash = ? ORDER BY timestamp DESC", (user_hash,))
+        project_list = [{"project_id": row[0], "title": row[1]} for row in c.fetchall()]
+
     return jsonify({"success": True, "projects": project_list})
 
 @drana_infinity.route('/create_new_project', methods=['POST'])
@@ -491,15 +530,14 @@ def create_new_project():
         return jsonify({"success": False, "message": "Missing user hash or project name."}), 400
 
     project_id = str(uuid.uuid4())
-    
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute(
-        "INSERT INTO projects (project_id, user_hash, title) VALUES (?, ?, ?)", 
-        (project_id, user_hash, project_name)
-    )
-    conn.commit()
-    conn.close()
+
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO projects (project_id, user_hash, title) VALUES (?, ?, ?)",
+            (project_id, user_hash, project_name)
+        )
+        conn.commit()
 
     return jsonify({"success": True, "project_id": project_id, "title": project_name})
 
@@ -511,27 +549,27 @@ def rename_project():
 
     if not all([project_id, new_title, user_hash]):
         return jsonify({"success": False, "message": "Missing required data."}), 400
-    
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("UPDATE projects SET title = ? WHERE project_id = ? AND user_hash = ?", (new_title, project_id, user_hash))
-    conn.commit()
-    conn.close()
+
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("UPDATE projects SET title = ? WHERE project_id = ? AND user_hash = ?", (new_title, project_id, user_hash))
+        conn.commit()
+
     return jsonify({"success": True})
 
 @drana_infinity.route('/delete_project', methods=['POST'])
 def delete_project():
     project_id = request.json.get("project_id")
     user_hash = request.cookies.get('user_hash')
-    
+
     if not all([project_id, user_hash]):
         return jsonify({"success": False, "message": "Missing required data."}), 400
 
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("DELETE FROM projects WHERE project_id = ? AND user_hash = ?", (project_id, user_hash))
-    conn.commit()
-    conn.close()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM projects WHERE project_id = ? AND user_hash = ?", (project_id, user_hash))
+        conn.commit()
+
     return jsonify({"success": True})
 
 if __name__ == '__main__':
@@ -539,6 +577,38 @@ if __name__ == '__main__':
         init_db()
     except sqlite3.OperationalError:
         print("Database already initialized.")
-    
-    print("Drana-Infinity server is running on ::: http://127.0.0.1:80")
-    serve(drana_infinity, host='127.0.0.1', port=80)
+
+    # Optimize for high-performance hardware (Ryzen 9 9950X with 32 threads)
+    cpu_count = multiprocessing.cpu_count()
+    optimal_threads = max(4, cpu_count)  # Use all available threads
+    optimal_workers = max(8, cpu_count // 2)  # Workers = half of threads for balanced performance
+
+    print("=" * 60)
+    print("Drana-Infinity - High-Performance Mode")
+    print("=" * 60)
+    print(f"CPU Cores Detected: {cpu_count}")
+    print(f"Waitress Threads: {optimal_threads}")
+    print(f"Waitress Workers: {optimal_workers}")
+    print(f"Database Connection Pool: {MAX_DB_CONNECTIONS}")
+    print(f"SQLite Cache: 256MB")
+    print(f"Server URL: http://127.0.0.1:80")
+    print("=" * 60)
+    print("Performance optimizations enabled for:")
+    print("  - Ryzen 9 9950X (multi-threaded processing)")
+    print("  - 128GB RAM (enhanced caching)")
+    print("  - RTX 5090 GPU (Ollama acceleration)")
+    print("  - WSL2 environment")
+    print("=" * 60)
+
+    serve(
+        drana_infinity,
+        host='127.0.0.1',
+        port=80,
+        threads=optimal_threads,  # Maximum concurrent connections per worker
+        channel_timeout=300,  # 5 minutes for long AI responses
+        connection_limit=1000,  # High connection limit for powerful hardware
+        backlog=2048,  # Large backlog queue
+        recv_bytes=65536,  # 64KB receive buffer
+        send_bytes=65536,  # 64KB send buffer
+        ident='Drana-Infinity/2.0'
+    )

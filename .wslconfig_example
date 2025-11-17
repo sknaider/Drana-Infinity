@@ -1,0 +1,52 @@
+# WSL2 Configuration for High-Performance Systems
+# Copy this file to C:\Users\YourUsername\.wslconfig on Windows
+# Optimized for: Ryzen 9 9950X (32 threads) + 128GB RAM + RTX 5090
+
+[wsl2]
+# Processor allocation - use most cores for maximum performance
+processors=28
+
+# Memory allocation - allocate generous amount for AI workloads
+memory=64GB
+
+# Swap space - high swap for large model processing
+swap=32GB
+
+# Disable swap file (optional - use if you have enough RAM)
+# swap=0
+
+# Localhostforwarding - enable for better network performance
+localhostForwarding=true
+
+# Enable nested virtualization (if needed)
+nestedVirtualization=true
+
+# Page reporting (memory optimization)
+pageReporting=true
+
+# GUI applications support
+guiApplications=true
+
+# Enable systemd (for better service management)
+[boot]
+systemd=true
+
+# Network configuration for optimal performance
+[network]
+generateHosts=true
+generateResolvConf=true
+
+# IMPORTANT NOTES:
+# 1. After creating/modifying .wslconfig, restart WSL with:
+#    wsl --shutdown
+#    (then restart your WSL distribution)
+#
+# 2. These settings are aggressive and optimized for your hardware.
+#    Adjust if you need Windows resources for other tasks.
+#
+# 3. Memory values can be adjusted based on your needs:
+#    - 64GB for AI work leaves plenty for Windows
+#    - You can increase to 96GB if needed
+#
+# 4. Processors=28 leaves 4 threads for Windows
+#    Adjust if you want different distribution
