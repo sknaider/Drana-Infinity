@@ -3,4 +3,5 @@ waitress==3.0.0
 requests==2.32.3
 Werkzeug==3.0.4
 GitPython
-waitress
+Flask-Limiter==3.5.0
+Flask-WTF==1.2.1
