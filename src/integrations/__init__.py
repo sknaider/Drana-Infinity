@@ -1,11 +1,19 @@
-"""Integration modules for external services and AI models."""
+"""
+GTL Platform Integration Components
+"""
 
-from .ollama_client import OllamaClient
-from .claude_client import ClaudeClient
-from .deepseek_client import DeepSeekClient
+from .gtl_platform_connector import (
+    GTLPlatformConnector,
+    GTLScanRequest,
+    GTLScanResult,
+    GTLComplianceData,
+    GTLIntegrationError,
+)
 
 __all__ = [
-    "OllamaClient",
-    "ClaudeClient",
-    "DeepSeekClient"
+    "GTLPlatformConnector",
+    "GTLScanRequest",
+    "GTLScanResult",
+    "GTLComplianceData",
+    "GTLIntegrationError",
 ]

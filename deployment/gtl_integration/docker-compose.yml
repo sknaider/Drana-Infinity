@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  # Drana-GTL Backend Service
+  drana-gtl:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: drana-gtl:latest
+    container_name: drana-gtl-backend
+    ports:
+      - "8000:8000"      # API server
+      - "8765:8765"      # WebSocket server
+    environment:
+      # GTL Platform Integration
+      - GTL_API_BASE=https://gtl-platform.example.com
+      - GTL_API_KEY=${GTL_API_KEY}
+      - GTL_CLIENT_ID=${GTL_CLIENT_ID}
+      
+      # Database
+      - GTL_DB_HOST=postgres
+      - GTL_DB_PORT=5432
+      - GTL_DB_NAME=gtl_platform
+      - GTL_DB_USER=gtl_user
+      - GTL_DB_PASSWORD=${GTL_DB_PASSWORD}
+      
+      # AI Models
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DEEPSEEK_ENDPOINT=http://deepseek:8080
+      
+      # Configuration
+      - LOG_LEVEL=INFO
+      - WORKERS=4
+      - MAX_CONCURRENT_SCANS=10
+      
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - gtl-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL Database (if not using existing GTL database)
+  postgres:
+    image: postgres:15-alpine
+    container_name: drana-gtl-postgres
+    environment:
+      - POSTGRES_DB=gtl_platform
+      - POSTGRES_USER=gtl_user
+      - POSTGRES_PASSWORD=${GTL_DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../migrations/gtl_integration:/docker-entrypoint-initdb.d
+    networks:
+      - gtl-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gtl_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and job queue
+  redis:
+    image: redis:7-alpine
+    container_name: drana-gtl-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - gtl-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Ollama for local model inference
+  ollama:
+    image: ollama/ollama:latest
+    container_name: drana-gtl-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - gtl-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # NGINX Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: drana-gtl-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - drana-gtl
+    networks:
+      - gtl-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  ollama_models:
+    driver: local
+
+networks:
+  gtl-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
