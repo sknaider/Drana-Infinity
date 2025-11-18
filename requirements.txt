@@ -1,6 +1,19 @@
+# Core Dependencies
 Flask==3.0.3
 waitress==3.0.0
 requests==2.32.3
 Werkzeug==3.0.4
-GitPython
-waitress
+
+# Git Integration
+GitPython==3.1.40
+
+# Security
+Flask-Limiter==3.5.0
+Flask-WTF==1.2.1
+bcrypt==4.1.2
+bleach==6.1.0
+python-dotenv==1.0.0
+
+# Validation
+python-magic==0.4.27
+email-validator==2.1.0

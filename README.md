@@ -1,13 +1,35 @@
 # 🧠 Drana-Infinity
 
-**Drana-Infinity** is a locally hosted advanced AI assistant designed and developed by **IHA089**.  
-It’s built specifically for **cybersecurity, ethical hacking, and bug bounty research** — empowering researchers to analyze, automate, and understand **real-world vulnerabilities**.
+**Drana-Infinity v2.0 - Enhanced Security Edition**
+
+A locally hosted advanced AI assistant designed and developed by **IHA089**.
+Built specifically for **cybersecurity, ethical hacking, and bug bounty research** — empowering researchers to analyze, automate, and understand **real-world vulnerabilities**.
+
+---
+
+## ✨ What's New in v2.0
+
+### 🔒 Enterprise-Grade Security Features
+- ✅ **Command Injection Prevention** - Safe command execution with pattern validation
+- ✅ **XSS Protection** - Server and client-side sanitization
+- ✅ **CSRF Protection** - Token-based request validation
+- ✅ **Rate Limiting** - Prevent abuse and DoS attacks
+- ✅ **SQL Injection Prevention** - Parameterized queries throughout
+- ✅ **Secure File Uploads** - Extension whitelist and size limits
+- ✅ **Comprehensive Logging** - Track all security events
+- ✅ **Input Validation** - Strict validation on all user inputs
+- ✅ **Authorization Controls** - Resource-level access verification
+
+### 📚 Complete Documentation
+- [SECURITY.md](SECURITY.md) - Security features and deployment best practices
+- [CONFIG.md](CONFIG.md) - Detailed configuration guide
+- `.env.example` - Environment variable template
 
 ---
 
 ## 🌐 Overview
 
-Drana-Infinity runs entirely **offline** and integrates directly with **Ollama** using a custom locally hosted AI model — [**IHA089/drana-infinity-v1**](https://ollama.com/IHA089/drana-infinity-v1).  
+Drana-Infinity runs entirely **offline** and integrates directly with **Ollama** using a custom locally hosted AI model — [**IHA089/drana-infinity-v1**](https://ollama.com/IHA089/drana-infinity-v1).
 It allows you to chat, execute commands, upload files, and organize research — all within a secure, private environment.
 
 ---
@@ -75,16 +97,48 @@ Verify that it’s available:
 ollama list
 ```
 
-### 6️⃣ Start the Ollama Backend
+### 6️⃣ Configure Environment (NEW in v2.0)
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Generate a strong secret key
+python3 -c "import secrets; print(secrets.token_hex(32))"
+
+# Edit .env and paste the secret key
+nano .env
+```
+
+**Important**: Set at minimum `SECRET_KEY` in `.env` for production use.
+
+See [CONFIG.md](CONFIG.md) for complete configuration options.
+
+### 7️⃣ Start the Ollama Backend
 
 ```bash
 ollama serve
 ```
 
-### 7️⃣ Run Drana-Infinity Server
+### 8️⃣ Run Drana-Infinity Server
 
 ```bash
 python3 drana_infinity.py
+```
+
+You should see:
+```
+🧠 Drana-Infinity - Enhanced Security Edition
+============================================================
+Security features enabled:
+  ✓ CSRF Protection
+  ✓ Rate Limiting
+  ✓ Input Sanitization
+  ✓ Command Injection Prevention
+  ✓ Secure File Uploads
+  ✓ SQL Injection Prevention
+  ✓ Comprehensive Logging
+============================================================
 ```
 
 

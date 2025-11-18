@@ -55,7 +55,7 @@ const renameProjectInput = document.getElementById('rename-project-input');
 const deleteProjectModal = document.getElementById('delete-project-modal');
 const closeDeleteProjectBtn = document.getElementById('close-delete-project-btn');
 const cancelDeleteProjectBtn = document.getElementById('cancel-delete-project-btn');
-const confirmDeleteProjectBtn = document.getElementById('confirm-delete-btn');
+const confirmDeleteProjectBtn = document.getElementById('confirm-delete-project-btn');
 const deleteProjectTitle = document.getElementById('delete-project-title');
 
 let activeChatId = null;

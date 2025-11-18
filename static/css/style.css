@@ -105,7 +105,7 @@ body {
   color: #000;
   font-weight: bold;
   cursor: pointer;
-  border-radius: 4-px;
+  border-radius: 4px;
   transition: 0.2s;
 }
 #sidebar-buttons button:hover {
