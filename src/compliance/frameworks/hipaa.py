@@ -11,7 +11,9 @@ Implements the 45 security controls from HIPAA Security Rule:
 Reference: 45 CFR Parts 160, 162, and 164 (Security Rule)
 """
 
-from typing import List
+import asyncio
+import logging
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from ..compliance_engine import (
     ComplianceControl,
@@ -19,14 +21,28 @@ from ..compliance_engine import (
     ControlStatus,
     RiskLevel
 )
+from ..control_assessor import HIPAAControlAssessor, ControlAssessment
+from ..gap_analyzer import HIPAAGapAnalyzer, GapAnalysisReport
+from ..remediation_planner import HIPAARemediationPlanner, RemediationRoadmap
+from ...integrations.claude_client import ClaudeClient
+
+logger = logging.getLogger(__name__)
 
 
 class HIPAAFramework:
-    """HIPAA Security Rule compliance framework."""
+    """HIPAA Security Rule compliance framework with automated assessment."""
 
-    def __init__(self):
-        """Initialize HIPAA framework with all 45 controls."""
+    def __init__(self, claude_client: Optional[ClaudeClient] = None):
+        """
+        Initialize HIPAA framework with all 45 controls.
+
+        Args:
+            claude_client: Optional Claude client for automated assessment
+        """
         self.controls = self._define_controls()
+        self.assessor = HIPAAControlAssessor(claude_client) if claude_client else None
+        self.gap_analyzer = HIPAAGapAnalyzer()
+        self.remediation_planner = HIPAARemediationPlanner(claude_client) if claude_client else None
 
     def get_description(self) -> str:
         """Get framework description."""
@@ -35,6 +51,109 @@ class HIPAAFramework:
     def get_all_controls(self) -> List[ComplianceControl]:
         """Get all HIPAA controls."""
         return self.controls
+
+    async def assess_compliance(
+        self,
+        system_config: Dict[str, Any],
+        evidence: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        system_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Perform automated HIPAA compliance assessment.
+
+        Args:
+            system_config: System configuration details
+            evidence: Evidence organized by control ID
+            system_context: Additional system context
+
+        Returns:
+            Comprehensive assessment results
+        """
+        if not self.assessor:
+            raise ValueError("Claude client required for automated assessment")
+
+        logger.info("Starting automated HIPAA compliance assessment")
+
+        # Assess all controls
+        assessments = []
+        evidence = evidence or {}
+
+        for control in self.controls:
+            control_evidence = evidence.get(control.control_id, [])
+
+            try:
+                assessment = await self.assessor.assess_control(
+                    control=control,
+                    system_config=system_config,
+                    evidence_provided=control_evidence,
+                    system_context=system_context
+                )
+                assessments.append(assessment)
+
+            except Exception as e:
+                logger.error(f"Failed to assess {control.control_id}: {e}")
+                continue
+
+        # Analyze gaps
+        gap_report = self.gap_analyzer.analyze_gaps(
+            assessments=assessments,
+            system_context=system_context or {}
+        )
+
+        logger.info(
+            f"Assessment complete: {gap_report.overall_compliance_score:.1f}% compliant, "
+            f"{len(gap_report.critical_gaps)} critical gaps"
+        )
+
+        return {
+            "assessments": assessments,
+            "gap_report": gap_report,
+            "summary": {
+                "total_controls": gap_report.total_controls,
+                "compliance_score": gap_report.overall_compliance_score,
+                "critical_gaps": len(gap_report.critical_gaps),
+                "high_gaps": len(gap_report.high_gaps),
+                "medium_gaps": len(gap_report.medium_gaps),
+                "low_gaps": len(gap_report.low_gaps)
+            }
+        }
+
+    async def generate_remediation_plan(
+        self,
+        gap_report: GapAnalysisReport,
+        assessments: List[ControlAssessment],
+        constraints: Optional[Dict[str, Any]] = None
+    ) -> RemediationRoadmap:
+        """
+        Generate phased remediation roadmap.
+
+        Args:
+            gap_report: Gap analysis report
+            assessments: Control assessments
+            constraints: Budget, timeline, resource constraints
+
+        Returns:
+            Remediation roadmap
+        """
+        if not self.remediation_planner:
+            raise ValueError("Claude client required for remediation planning")
+
+        return await self.remediation_planner.generate_roadmap(
+            gap_report=gap_report,
+            assessments=assessments,
+            constraints=constraints
+        )
+
+    def get_controls_by_category(self, category: str) -> List[ComplianceControl]:
+        """Get controls by category."""
+        return [c for c in self.controls if c.category == category]
+
+    def get_control_by_id(self, control_id: str) -> Optional[ComplianceControl]:
+        """Get specific control by ID."""
+        for control in self.controls:
+            if control.control_id == control_id:
+                return control
+        return None
 
     def _define_controls(self) -> List[ComplianceControl]:
         """Define all HIPAA Security Rule controls."""
