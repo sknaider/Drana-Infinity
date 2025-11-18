@@ -1,0 +1,392 @@
+# FDA Cybersecurity Requirements for Medical AI Devices
+# Based on FDA Guidance: Cybersecurity in Medical Devices (2023)
+
+premarket_requirements:
+  sbom:
+    name: "Software Bill of Materials"
+    description: |
+      Document all software components, dependencies, and versions
+      used in the medical AI device.
+
+    required_components:
+      - framework: "PyTorch, TensorFlow, or other ML framework"
+        version_tracking: true
+      - model: "AI model name and version (e.g., DeepSeek-R1-7B)"
+        version_tracking: true
+      - api_dependencies: "External APIs (e.g., Claude Sonnet 4.5)"
+        version_tracking: true
+      - libraries: "All Python packages (numpy, scipy, etc.)"
+        version_tracking: true
+      - system_software: "Operating system, CUDA, drivers"
+        version_tracking: true
+
+    update_frequency: "With every software release or deployment"
+    cve_monitoring: "Monitor CVEs for all SBOM components"
+
+    implementation:
+      tools:
+        - "SPDX format SBOM"
+        - "CycloneDX format SBOM"
+        - "Automated SBOM generation (pip-licenses, sbom-tool)"
+
+      example_location: "/docs/sbom/medical_ai_device_sbom.json"
+
+  threat_modeling:
+    name: "Cybersecurity Threat Modeling"
+    description: |
+      Comprehensive threat model identifying attack vectors,
+      vulnerabilities, and security controls.
+
+    required_analyses:
+      - stride_analysis: "Spoofing, Tampering, Repudiation, Info Disclosure, DoS, Elevation of Privilege"
+      - attack_surface: "All interfaces, APIs, data flows"
+      - risk_assessment: "Likelihood × Impact for each threat"
+      - controls_mapping: "Security controls addressing each threat"
+
+    medical_ai_specific_threats:
+      - "Model inversion attacks"
+      - "Data poisoning"
+      - "Adversarial examples"
+      - "Prompt injection (LLMs)"
+      - "Training data extraction"
+      - "GPU memory exposure"
+      - "Model weight theft"
+
+    implementation:
+      tools:
+        - "Microsoft Threat Modeling Tool"
+        - "OWASP Threat Dragon"
+        - "Custom medical AI threat engine (this module)"
+
+      documentation: "/docs/threat_models/medical_ai_threat_model.pdf"
+
+  security_architecture:
+    name: "Security Architecture Documentation"
+    description: |
+      Detailed documentation of security controls, encryption,
+      access controls, and data protection mechanisms.
+
+    required_documentation:
+      - architecture_diagram: "System architecture with security boundaries"
+      - data_flow: "PHI data flows and encryption points"
+      - access_control: "Authentication and authorization mechanisms"
+      - encryption: "Encryption at rest and in transit details"
+      - audit_logging: "Logging and monitoring capabilities"
+      - incident_response: "Security incident response procedures"
+
+    medical_ai_specifics:
+      - differential_privacy: "DP-SGD parameters (ε, δ)"
+      - model_security: "Model weight encryption, integrity checks"
+      - gpu_security: "RTX 5090 memory protection mechanisms"
+      - api_security: "Claude API authentication and rate limiting"
+
+    implementation:
+      documentation: "/docs/security/medical_ai_security_architecture.md"
+
+  vulnerability_management:
+    name: "Vulnerability Management Process"
+    description: |
+      Coordinated vulnerability disclosure and patching process
+      with defined timelines for remediation.
+
+    disclosure_process:
+      intake: "security@medical-ai-company.com"
+      acknowledgment_time: "24 hours"
+      initial_assessment: "72 hours for severity classification"
+      critical_patch_timeline: "30 days maximum"
+      high_patch_timeline: "90 days maximum"
+      coordination: "With FDA if patient safety impact"
+
+    severity_classification:
+      critical:
+        - "Patient safety impact"
+        - "Active exploitation observed"
+        - "Remote code execution"
+        - "PHI breach risk"
+      high:
+        - "Authenticated remote code execution"
+        - "Privilege escalation"
+        - "Data exfiltration potential"
+      medium:
+        - "Local privilege escalation"
+        - "Denial of service"
+      low:
+        - "Information disclosure"
+        - "Minor security weaknesses"
+
+    implementation:
+      process_doc: "/docs/security/vulnerability_management_process.md"
+      disclosure_policy: "/docs/security/coordinated_disclosure_policy.md"
+
+  security_testing:
+    name: "Security Testing Requirements"
+    description: |
+      Comprehensive security testing including penetration testing,
+      vulnerability scanning, and adversarial robustness testing.
+
+    required_tests:
+      - penetration_testing: "Annual third-party penetration test"
+      - vulnerability_scanning: "Weekly automated scans"
+      - adversarial_testing: "Quarterly adversarial robustness evaluation"
+      - model_inversion_testing: "Test resistance to model inversion attacks"
+      - prompt_injection_testing: "Test LLM prompt injection defenses"
+      - fuzz_testing: "Automated fuzzing of API endpoints"
+
+    test_frequency:
+      before_release: "All tests must pass before production deployment"
+      continuous: "Vulnerability scanning continuous"
+      periodic: "Penetration testing annually, adversarial testing quarterly"
+
+    acceptance_criteria:
+      critical_vulns: "Zero critical vulnerabilities in production"
+      high_vulns: "All high vulnerabilities remediated or mitigated"
+      adversarial_robustness: "Model robust against standard attacks (FGSM, PGD)"
+
+    implementation:
+      test_results: "/reports/security_testing/"
+      tools:
+        - "Nessus, OpenVAS for vulnerability scanning"
+        - "Burp Suite, Metasploit for penetration testing"
+        - "CleverHans, Foolbox for adversarial testing"
+
+postmarket_requirements:
+  continuous_monitoring:
+    name: "Postmarket Cybersecurity Monitoring"
+    description: |
+      Continuous monitoring of device security, performance, and
+      emerging threats in production environment.
+
+    monitoring_requirements:
+      - security_events: "Real-time monitoring of security logs"
+      - model_performance: "Continuous model accuracy monitoring"
+      - anomaly_detection: "Detect unusual usage patterns or attacks"
+      - threat_intelligence: "Monitor emerging medical AI threats"
+      - performance_degradation: "Alert on model performance decline"
+      - adversarial_attempts: "Detect and log adversarial input attempts"
+
+    metrics_tracked:
+      - "Model prediction accuracy (vs. validation baseline)"
+      - "API request rates and patterns"
+      - "Authentication failures"
+      - "Access control violations"
+      - "Data exfiltration attempts"
+      - "GPU memory usage anomalies"
+      - "Model confidence distribution changes"
+
+    alerting_thresholds:
+      critical_alerts:
+        - "Model accuracy drop >5%"
+        - "Authentication bypass attempt"
+        - "PHI access from unauthorized location"
+        - "Model inversion attack detected"
+      high_alerts:
+        - "Model accuracy drop 2-5%"
+        - "Repeated authentication failures"
+        - "Unusual API usage patterns"
+        - "Adversarial input detected"
+
+    implementation:
+      monitoring_system: "SIEM integration (Splunk, ELK, or equivalent)"
+      dashboards: "/dashboards/medical_ai_security_dashboard"
+      alert_routing: "PagerDuty, email, Slack"
+
+  incident_response:
+    name: "Cybersecurity Incident Response"
+    description: |
+      Documented incident response procedures for security events
+      affecting the medical AI device.
+
+    incident_classification:
+      severity_1_critical:
+        - "Active patient safety impact"
+        - "Ongoing PHI breach"
+        - "Device functionality compromised"
+        - "Active exploitation of vulnerability"
+        response_time: "Immediate (within 1 hour)"
+        fda_notification: "Within 24 hours"
+
+      severity_2_high:
+        - "Potential patient safety impact"
+        - "Suspected PHI exposure"
+        - "Successful unauthorized access"
+        - "Malware detected"
+        response_time: "Within 4 hours"
+        fda_notification: "If confirmed patient impact"
+
+      severity_3_medium:
+        - "Minor security control failure"
+        - "Unsuccessful attack attempt"
+        - "Non-critical vulnerability exploited"
+        response_time: "Within 24 hours"
+        fda_notification: "Not required"
+
+    response_procedures:
+      detection: "Automated alerts + manual reporting"
+      triage: "Security team assesses severity and impact"
+      containment: "Isolate affected systems, block attacker"
+      eradication: "Remove threat, patch vulnerability"
+      recovery: "Restore service, verify integrity"
+      lessons_learned: "Post-incident review and documentation"
+
+    fda_reporting:
+      triggers:
+        - "Patient safety impact (actual or potential)"
+        - "Device functionality compromised"
+        - "Large-scale PHI breach"
+
+      process:
+        - "Report via FDA MedWatch (Form 3500A)"
+        - "Include incident details, impact, remediation"
+        - "Timeline: 24 hours for critical, 5 days for serious"
+
+      contact: "FDA CDRH (Center for Devices and Radiological Health)"
+
+    implementation:
+      playbooks: "/playbooks/medical_ai/incident_response_playbooks.md"
+      escalation_matrix: "/docs/security/escalation_matrix.pdf"
+      contact_list: "/docs/security/emergency_contacts.yaml"
+
+  patch_management:
+    name: "Security Patch Management"
+    description: |
+      Process for developing, testing, and deploying security patches
+      to address vulnerabilities in production devices.
+
+    patch_development:
+      vulnerability_assessment: "Assess severity and exploitability"
+      patch_design: "Develop fix without breaking clinical functionality"
+      testing: "Validate fix in test environment"
+      validation: "Ensure no clinical accuracy impact"
+      approval: "Clinical and security team approval"
+
+    deployment_timeline:
+      critical_patches: "30 days maximum from disclosure"
+      high_patches: "90 days maximum"
+      medium_patches: "6 months maximum"
+      low_patches: "Next regular update cycle"
+
+    deployment_process:
+      notification: "Notify all device users 7 days prior"
+      staged_rollout: "Deploy to subset of devices first"
+      monitoring: "Monitor for adverse effects"
+      full_deployment: "Deploy to all devices after validation"
+      verification: "Confirm patch installation"
+
+    rollback_plan:
+      triggers:
+        - "Clinical accuracy degradation"
+        - "Device malfunction"
+        - "Adverse patient outcomes"
+
+      procedure:
+        - "Immediate halt of deployment"
+        - "Rollback to previous version"
+        - "Root cause analysis"
+        - "Patch redesign and retest"
+
+    implementation:
+      patch_repository: "/releases/security_patches/"
+      deployment_logs: "/logs/patch_deployment/"
+
+  supply_chain_security:
+    name: "Software Supply Chain Security"
+    description: |
+      Security controls for third-party components, models, and
+      software dependencies.
+
+    requirements:
+      - component_verification: "Verify checksums/signatures for all downloads"
+      - source_authenticity: "Download only from official sources"
+      - vulnerability_scanning: "Scan all dependencies for known CVEs"
+      - license_compliance: "Verify license compatibility"
+      - update_monitoring: "Monitor for security updates"
+
+    medical_ai_specifics:
+      deepseek_model:
+        source: "Official DeepSeek repository only"
+        verification: "SHA-256 checksum verification"
+        integrity: "Model hash verification before deployment"
+        updates: "Monitor for security patches"
+
+      claude_api:
+        authentication: "API key rotation every 90 days"
+        rate_limiting: "Enforce API rate limits"
+        monitoring: "Log all API interactions"
+        failover: "Local fallback if API unavailable"
+
+      pytorch_dependencies:
+        source: "Official PyPI or conda-forge"
+        scanning: "Automated CVE scanning (Safety, Snyk)"
+        pinning: "Pin specific versions in requirements.txt"
+        updates: "Regular updates after testing"
+
+    implementation:
+      sbom_tool: "Automated SBOM generation"
+      scanning_tool: "Snyk, Safety, or Dependabot"
+      verification_script: "/scripts/verify_dependencies.sh"
+
+compliance_matrix:
+  fda_guidance_2023:
+    - requirement: "SBOM for all software components"
+      implementation: "premarket_requirements.sbom"
+      status: "Implemented"
+
+    - requirement: "Cybersecurity threat modeling"
+      implementation: "premarket_requirements.threat_modeling"
+      status: "Implemented"
+
+    - requirement: "Coordinated vulnerability disclosure"
+      implementation: "premarket_requirements.vulnerability_management"
+      status: "Implemented"
+
+    - requirement: "Postmarket monitoring"
+      implementation: "postmarket_requirements.continuous_monitoring"
+      status: "Implemented"
+
+    - requirement: "Incident response plan"
+      implementation: "postmarket_requirements.incident_response"
+      status: "Implemented"
+
+    - requirement: "Secure software development lifecycle"
+      implementation: "Development process with security gates"
+      status: "Implemented"
+
+    - requirement: "Security testing before release"
+      implementation: "premarket_requirements.security_testing"
+      status: "Implemented"
+
+    - requirement: "Timely security updates"
+      implementation: "postmarket_requirements.patch_management"
+      status: "Implemented"
+
+  hipaa_security_rule:
+    - requirement: "Risk analysis (164.308(a)(1)(ii)(A))"
+      implementation: "Integrated with HIPAA compliance engine"
+      status: "Implemented"
+
+    - requirement: "Audit controls (164.312(b))"
+      implementation: "Comprehensive audit logging"
+      status: "Implemented"
+
+    - requirement: "Encryption (164.312(a)(2)(iv))"
+      implementation: "AES-256 for PHI, TLS 1.3 for transit"
+      status: "Implemented"
+
+  nist_ai_rmf:
+    - requirement: "AI risk management process"
+      implementation: "Medical AI threat intelligence engine"
+      status: "Implemented"
+
+    - requirement: "Adversarial robustness testing"
+      implementation: "Quarterly testing with CleverHans/Foolbox"
+      status: "Implemented"
+
+    - requirement: "Model governance"
+      implementation: "Model versioning, integrity checks, access controls"
+      status: "Implemented"
+
+# Version tracking
+version: "1.0.0"
+last_updated: "2025-01-18"
+next_review: "2025-07-18"  # Semi-annual review
+maintainer: "GTL Consulting - Medical AI Security Team"
