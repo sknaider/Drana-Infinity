@@ -53,6 +53,31 @@ To ensure smooth performance when running Drana-Infinity and your local AI model
 
 ## 🧩 Complete Setup Guide
 
+You can set up Drana-Infinity in two ways:
+
+### 🚀 **Quick Setup (Recommended)**
+
+Use the automated installation script:
+
+```bash
+git clone https://github.com/IHA089/drana-infinity.git
+cd drana-infinity
+chmod +x setup.sh
+./setup.sh
+```
+
+The setup script will automatically:
+- ✅ Check prerequisites
+- ✅ Create virtual environment
+- ✅ Install all dependencies
+- ✅ Configure `.env` with secure SECRET_KEY
+- ✅ Download Ollama model
+- ✅ Set up directories and permissions
+
+---
+
+### 📋 **Manual Setup**
+
 Follow these steps carefully 👇
 
 ---
@@ -154,4 +179,89 @@ Security features enabled:
 
 <img width="1920" height="1051" alt="image" src="https://github.com/user-attachments/assets/af36797b-b6a1-4cb4-ba62-41d57682023b" />
 
+---
+
+## 📊 Monitoring & Health Checks
+
+### Health Check Endpoint
+
+Drana-Infinity includes a comprehensive health check endpoint for monitoring:
+
+```bash
+curl http://127.0.0.1:80/health
+```
+
+**Response (healthy)**:
+```json
+{
+  "status": "healthy",
+  "version": "2.0.0",
+  "timestamp": "2025-01-18T12:00:00",
+  "checks": {
+    "database": {
+      "status": "healthy",
+      "message": "Database accessible"
+    },
+    "ollama": {
+      "status": "healthy",
+      "message": "Ollama API accessible"
+    },
+    "uploads": {
+      "status": "healthy",
+      "message": "Upload directory writable"
+    }
+  }
+}
+```
+
+**HTTP Status Codes**:
+- `200` - All systems healthy
+- `503` - One or more systems unhealthy
+
+**Use Cases**:
+- Load balancer health checks
+- Kubernetes liveness/readiness probes
+- Monitoring systems (Prometheus, Nagios, etc.)
+- CI/CD deployment verification
+
+---
+
+## 📖 Documentation
+
+- **[SECURITY.md](SECURITY.md)** - Security features, best practices, deployment guides
+- **[CONFIG.md](CONFIG.md)** - Complete configuration reference
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes
+- **[LICENSE](LICENSE)** - MIT License
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+## 📜 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 👨‍💻 Author
+
+**IHA089**
+- Website: [https://iha089.org](https://iha089.org)
+- GitHub: [@IHA089](https://github.com/IHA089)
+
+---
+
+## 🙏 Acknowledgments
+
+- Built with Flask, Ollama, and modern security libraries
+- Inspired by the cybersecurity community
+- Designed for ethical hackers and security researchers
+
+---
+
+**⚠️ Disclaimer**: This tool is designed for educational and authorized security research purposes only. Always obtain proper authorization before testing on any systems you do not own.
 

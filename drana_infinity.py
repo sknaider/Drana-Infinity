@@ -876,6 +876,60 @@ def get_command_output():
         logger.error(f"Error getting command output: {e}")
         return jsonify({"success": False, "message": "Error retrieving output"}), 500
 
+@drana_infinity.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for monitoring and load balancers."""
+    health_status = {
+        "status": "healthy",
+        "version": "2.0.0",
+        "timestamp": datetime.now().isoformat(),
+        "checks": {}
+    }
+
+    overall_healthy = True
+
+    # Check database connectivity
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("SELECT 1")
+        conn.close()
+        health_status["checks"]["database"] = {"status": "healthy", "message": "Database accessible"}
+    except Exception as e:
+        health_status["checks"]["database"] = {"status": "unhealthy", "message": str(e)}
+        overall_healthy = False
+
+    # Check Ollama connectivity
+    try:
+        ollama_url = f"{drana_infinity.config['OLLAMA_URL']}/api/tags"
+        r = requests.get(ollama_url, timeout=3)
+        if r.status_code == 200:
+            health_status["checks"]["ollama"] = {"status": "healthy", "message": "Ollama API accessible"}
+        else:
+            health_status["checks"]["ollama"] = {"status": "degraded", "message": f"Ollama returned {r.status_code}"}
+            overall_healthy = False
+    except requests.exceptions.RequestException as e:
+        health_status["checks"]["ollama"] = {"status": "unhealthy", "message": f"Cannot reach Ollama: {str(e)}"}
+        overall_healthy = False
+
+    # Check uploads directory
+    try:
+        if os.path.exists(UPLOAD_FOLDER) and os.access(UPLOAD_FOLDER, os.W_OK):
+            health_status["checks"]["uploads"] = {"status": "healthy", "message": "Upload directory writable"}
+        else:
+            health_status["checks"]["uploads"] = {"status": "unhealthy", "message": "Upload directory not writable"}
+            overall_healthy = False
+    except Exception as e:
+        health_status["checks"]["uploads"] = {"status": "unhealthy", "message": str(e)}
+        overall_healthy = False
+
+    # Set overall status
+    if not overall_healthy:
+        health_status["status"] = "unhealthy"
+
+    status_code = 200 if overall_healthy else 503
+    return jsonify(health_status), status_code
+
 @drana_infinity.route('/get_projects', methods=['GET'])
 def get_projects():
     user_hash = request.cookies.get('user_hash')
